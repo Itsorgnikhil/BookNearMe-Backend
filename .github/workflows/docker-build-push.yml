@@ -30,8 +30,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/staynest-app:latest
-            ghcr.io/${{ github.repository_owner }}/staynest-app:${{ github.sha }}# Docker Build and Push Workflow
+            context: .
+            push: true
+            tags: |
+              ghcr.io/itsorgnikhil/staynest-app:latest
+              ghcr.io/itsorgnikhil/staynest-app:${{ github.sha }}
