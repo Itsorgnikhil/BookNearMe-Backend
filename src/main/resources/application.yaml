@@ -1,0 +1,65 @@
+server:
+  port: ${SERVER_PORT:9000}
+  servlet:
+    context-path: ${SERVER_CONTEXT_PATH:/api/v1}
+spring:
+  application:
+    name: StayNest
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/staynest_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: ${DB_DDL_AUTO:update}
+    show-sql: ${JPA_SHOW_SQL:false}
+    properties:
+      hibernate:
+        format_sql: ${JPA_FORMAT_SQL:false}
+
+  ai:
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY:your_gemini_api_key_here}
+        chat:
+          options:
+            model: gemini-2.5-flash
+        embedding:
+          api-key: ${GEMINI_API_KEY:your_gemini_api_key_here}
+          text:
+            options:
+              model: text-embedding-001
+    vectorstore:
+      pgvector:
+        enabled: false
+        initialize-schema: false
+        dimensions: 3072
+        distance-type: COSINE_DISTANCE
+        schema-name: public
+        table-name: hotel_embeddings
+
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:true}
+  swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:true}
+
+vectorstore:
+  datasource:
+    url: ${VECTOR_DB_URL:jdbc:postgresql://localhost:5433/staynest_db}
+    username: ${VECTOR_DB_USERNAME:postgres}
+    password: ${VECTOR_DB_PASSWORD:postgres}
+jwt:
+  secretKey: ${JWT_SECRET_KEY:qwertyuiop123456789asdfghjklzxcvbnm123456789qwertyuiopas123456789dfghjklzxcvbnm}
+
+frontend:
+  url: ${FRONTEND_URL:http://localhost:3000}
+
+stripe:
+  secret:
+    key: ${STRIPE_SECRET_KEY:your_stripe_secret_key_here}
+  public:
+    key: ${STRIPE_PUBLIC_KEY:your_stripe_public_key_here}
+  webhook:
+    secret: ${STRIPE_WEBHOOK_SECRET:your_stripe_webhook_secret_here}

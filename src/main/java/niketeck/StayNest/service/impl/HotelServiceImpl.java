@@ -1,0 +1,181 @@
+package niketeck.StayNest.service.impl;
+
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+import niketeck.StayNest.dto.*;
+import niketeck.StayNest.entity.Hotel;
+import niketeck.StayNest.entity.Room;
+import niketeck.StayNest.entity.User;
+import niketeck.StayNest.exception.ResourceNotFoundException;
+import niketeck.StayNest.exception.UnAuthorisedException;
+import niketeck.StayNest.repository.HotelRepository;
+import niketeck.StayNest.repository.InventoryRepository;
+import niketeck.StayNest.repository.RoomRepository;
+import niketeck.StayNest.service.HotelService;
+import niketeck.StayNest.service.InventoryService;
+import niketeck.StayNest.service.PricingUpdateService;
+import org.modelmapper.ModelMapper;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import static niketeck.StayNest.util.AppUtils.getCurrentUser;
+
+@Service
+@Slf4j
+@RequiredArgsConstructor
+public class HotelServiceImpl implements HotelService{
+
+    private final HotelRepository hotelRepository;
+    private final ModelMapper modelMapper;
+    private final InventoryService inventoryService;
+    private final RoomRepository roomRepository;
+    private final InventoryRepository inventoryRepository;
+    private final PricingUpdateService pricingUpdateService;
+    private final niketeck.StayNest.service.HotelEmbeddingService hotelEmbeddingService;
+
+    @Override
+    public HotelDto createNewHotel(HotelDto hotelDto) {
+        log.info("Creating a new hotel with name: {}", hotelDto.getName());
+        Hotel hotel = modelMapper.map(hotelDto, Hotel.class);
+        hotel.setActive(false);
+
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        hotel.setOwner(user);
+
+        hotel = hotelRepository.save(hotel);
+        log.info("Created a new hotel with ID: {}", hotelDto.getId());
+        return modelMapper.map(hotel, HotelDto.class);
+    }
+
+    @Override
+    public HotelDto getHotelById(Long id) {
+        log.info("Getting the hotel with ID: {}", id);
+        Hotel hotel = hotelRepository
+                .findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with ID: "+id));
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        if(!user.equals(hotel.getOwner())) {
+            throw new UnAuthorisedException("This user does not own this hotel with id: "+id);
+        }
+
+        return modelMapper.map(hotel, HotelDto.class);
+    }
+
+    @Override
+    public HotelDto updateHotelById(Long id, HotelDto hotelDto) {
+        log.info("Updating the hotel with ID: {}", id);
+        Hotel hotel = hotelRepository
+                .findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with ID: "+id));
+
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if(!user.equals(hotel.getOwner())) {
+            throw new UnAuthorisedException("This user does not own this hotel with id: "+id);
+        }
+
+        modelMapper.map(hotelDto, hotel);
+        hotel.setId(id);
+        hotel = hotelRepository.save(hotel);
+        return modelMapper.map(hotel, HotelDto.class);
+    }
+
+    @Override
+    @Transactional
+    public void deleteHotelById(Long id) {
+        Hotel hotel = hotelRepository
+                .findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with ID: "+id));
+
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if(!user.equals(hotel.getOwner())) {
+            throw new UnAuthorisedException("This user does not own this hotel with id: "+id);
+        }
+
+
+        for(Room room: hotel.getRooms()) {
+            inventoryService.deleteAllInventories(room);
+            roomRepository.deleteById(room.getId());
+        }
+        hotelEmbeddingService.removeHotel(id);
+        hotelRepository.deleteById(id);
+    }
+
+    @Override
+    @Transactional
+    public void activateHotel(Long hotelId) {
+        log.info("Activating the hotel with ID: {}", hotelId);
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with ID: "+hotelId));
+
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        if(!user.equals(hotel.getOwner())) {
+            throw new UnAuthorisedException("This user does not own this hotel with id: "+hotelId);
+        }
+
+        hotel.setActive(true);
+
+        // assuming only do it once
+        for(Room room: hotel.getRooms()) {
+            inventoryService.initializeRoomForAYear(room);
+        }
+        pricingUpdateService.updateHotelPrices(hotel);
+        hotelEmbeddingService.indexHotel(hotel);
+    }
+
+    //    public method
+    @Override
+    public HotelInfoDto getHotelInfoById(Long hotelId, HotelInfoRequestDto hotelInfoRequestDto) {
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hotel not found with ID: "+hotelId));
+
+        long daysCount = ChronoUnit.DAYS.between(hotelInfoRequestDto.getStartDate(), hotelInfoRequestDto.getEndDate())+1;
+
+        List<RoomPriceDto> roomPriceDtoList = inventoryRepository.findRoomAveragePrice(hotelId,
+                hotelInfoRequestDto.getStartDate(), hotelInfoRequestDto.getEndDate(),
+                hotelInfoRequestDto.getRoomsCount(), daysCount);
+
+        List<RoomPriceResponseDto> rooms = roomPriceDtoList.stream()
+                .map(roomPriceDto -> {
+                    RoomPriceResponseDto roomPriceResponseDto = modelMapper.map(roomPriceDto.getRoom(),
+                            RoomPriceResponseDto.class);
+                    roomPriceResponseDto.setPrice(roomPriceDto.getPrice());
+                    return roomPriceResponseDto;
+                })
+                .collect(Collectors.toList());
+
+        return new HotelInfoDto(modelMapper.map(hotel, HotelDto.class), rooms);
+    }
+
+    @Override
+    public List<HotelDto> getAllHotels() {
+        User user = getCurrentUser();
+        log.info("Getting all hotels for the admin user with ID: {}", user.getId());
+        List<Hotel> hotels = hotelRepository.findByOwner(user);
+
+        return hotels
+                .stream()
+                .map((element) -> modelMapper.map(element, HotelDto.class))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<HotelDto> getAllActiveHotels() {
+        log.info("Getting all active hotels for browse");
+        List<Hotel> hotels = hotelRepository.findByActive(true);
+
+        return hotels
+                .stream()
+                .map((element) -> modelMapper.map(element, HotelDto.class))
+                .collect(Collectors.toList());
+    }
+}
