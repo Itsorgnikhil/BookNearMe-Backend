@@ -51,7 +51,7 @@ vectorstore:
     username: ${VECTOR_DB_USERNAME:postgres}
     password: ${VECTOR_DB_PASSWORD:postgres}
 jwt:
-  secretKey: ${JWT_SECRET_KEY:qwertyuiop123456789asdfghjklzxcvbnm123456789qwertyuiopas123456789dfghjklzxcvbnm}
+  secretKey: ${JWT_SECRET_KEY}
 
 frontend:
   url: ${FRONTEND_URL:http://localhost:3000}
